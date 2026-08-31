@@ -66,6 +66,13 @@ type Store interface {
 	FailRun(ctx context.Context, runID, code, message string, durationMs int) (*models.TaskReviewRun, error)
 	CancelRun(ctx context.Context, runID string) (*models.TaskReviewRun, error)
 	PublishFindings(ctx context.Context, req taskservice.PublishFindingsRequest) (*models.TaskReviewRun, []*models.TaskReviewFinding, error)
+
+	// Objective assessment (kind = objective_check).
+	ActiveAssessmentRun(ctx context.Context, taskID string) (*models.TaskReviewRun, error)
+	FindAssessmentRunByEntryID(ctx context.Context, entryID string) (*models.TaskReviewRun, error)
+	PublishAssessment(ctx context.Context, req taskservice.PublishAssessmentRequest) (*models.TaskReviewRun, []*models.TaskObjectiveCriterion, error)
+	WriteFailedAssessmentGate(ctx context.Context, run *models.TaskReviewRun, gate bool, note string)
+
 	// FindRunByEntryID returns the run already created for a step-transition
 	// ledger entry, or nil when none exists yet. Backs the durable dedup for
 	// AC-OFFICE-STEP-ENTRY-001.10: a redelivery of the same entry (after
@@ -76,7 +83,12 @@ type Store interface {
 
 // RunRequest describes a review pass to start.
 type RunRequest struct {
-	TaskID         string
+	TaskID string
+	// Kind selects the pass. The zero value is code_review.
+	Kind models.ReviewRunKind
+	// Gate, for an objective_check triggered by a workflow step, asks the
+	// service to record the synthetic approve/reject decision on completion.
+	Gate           bool
 	SessionID      string
 	RepositoryID   string
 	AgentProfileID string
@@ -95,14 +107,17 @@ type RunRequest struct {
 // rules in apps/backend/AGENTS.md. A pass detached by Launch is therefore always
 // joined at shutdown rather than leaked.
 type Runner struct {
-	store       Store
-	resolver    *Resolver
-	changes     ChangeSource
-	inference   Inference
-	prompts     PromptBuilder
-	taskContext TaskContextLookup
-	sessions    SessionLookup
-	logger      *logger.Logger
+	store             Store
+	resolver          *Resolver
+	objectiveResolver *Resolver
+	changes           ChangeSource
+	inference         Inference
+	prompts           PromptBuilder
+	objectivePrompts  ObjectivePromptBuilder
+	documents         ObjectiveDocumentLookup
+	taskContext       TaskContextLookup
+	sessions          SessionLookup
+	logger            *logger.Logger
 
 	// budgetBytes overrides PromptBudgetBytes; tests set it to force batching.
 	budgetBytes int
@@ -126,30 +141,44 @@ type inFlightRun struct {
 
 // RunnerDeps groups the runner's collaborators.
 type RunnerDeps struct {
-	Store       Store
-	Resolver    *Resolver
-	Changes     ChangeSource
-	Inference   Inference
-	Prompts     PromptBuilder
-	TaskContext TaskContextLookup
-	Sessions    SessionLookup
-	Logger      *logger.Logger
-	BudgetBytes int
+	Store Store
+	// Resolver picks the reviewer identity for code_review passes.
+	Resolver *Resolver
+	// ObjectiveResolver picks the assessing identity for objective_check
+	// passes (the objective-check utility agent instead of code-review).
+	// Falls back to Resolver when nil.
+	ObjectiveResolver *Resolver
+	Changes           ChangeSource
+	Inference         Inference
+	Prompts           PromptBuilder
+	ObjectivePrompts  ObjectivePromptBuilder
+	Documents         ObjectiveDocumentLookup
+	TaskContext       TaskContextLookup
+	Sessions          SessionLookup
+	Logger            *logger.Logger
+	BudgetBytes       int
 }
 
 // NewRunner builds a Runner.
 func NewRunner(deps RunnerDeps) *Runner {
+	objectiveResolver := deps.ObjectiveResolver
+	if objectiveResolver == nil {
+		objectiveResolver = deps.Resolver
+	}
 	return &Runner{
-		store:       deps.Store,
-		resolver:    deps.Resolver,
-		changes:     deps.Changes,
-		inference:   deps.Inference,
-		prompts:     deps.Prompts,
-		taskContext: deps.TaskContext,
-		sessions:    deps.Sessions,
-		logger:      deps.Logger.WithFields(zap.String("component", "review-runner")),
-		budgetBytes: deps.BudgetBytes,
-		inFlight:    make(map[string]*inFlightRun),
+		store:             deps.Store,
+		resolver:          deps.Resolver,
+		objectiveResolver: objectiveResolver,
+		changes:           deps.Changes,
+		inference:         deps.Inference,
+		prompts:           deps.Prompts,
+		objectivePrompts:  deps.ObjectivePrompts,
+		documents:         deps.Documents,
+		taskContext:       deps.TaskContext,
+		sessions:          deps.Sessions,
+		logger:            deps.Logger.WithFields(zap.String("component", "review-runner")),
+		budgetBytes:       deps.BudgetBytes,
+		inFlight:          make(map[string]*inFlightRun),
 	}
 }
 
@@ -199,11 +228,14 @@ func (r *Runner) launch(ctx context.Context, req RunRequest) (*models.TaskReview
 		return nil, nil, taskservice.ErrTaskIDRequired
 	}
 
+	slot := kindSlotKey(req)
+
 	// Claim the task's slot before touching the DB. Claiming after CreateRun
 	// would let two concurrent launches both insert a run and leave the loser's
-	// row pending forever with no goroutine behind it.
-	if !r.claim(req.TaskID) {
-		existing, err := r.store.ActiveRun(ctx, req.TaskID)
+	// row pending forever with no goroutine behind it. The slot is per (task,
+	// kind) so a code review and an objective check can run concurrently.
+	if !r.claim(slot) {
+		existing, err := r.activeRunForKind(ctx, req)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -219,13 +251,13 @@ func (r *Runner) launch(ctx context.Context, req RunRequest) (*models.TaskReview
 	launched := false
 	defer func() {
 		if !launched {
-			r.release(req.TaskID)
+			r.release(slot)
 		}
 	}()
 
 	// A pass that survived a restart has a DB row but no in-memory claim, so the
 	// claim above succeeds. Rejoin it instead of starting a second one.
-	if existing, err := r.store.ActiveRun(ctx, req.TaskID); err == nil && existing != nil {
+	if existing, err := r.activeRunForKind(ctx, req); err == nil && existing != nil {
 		return existing, nil, nil
 	}
 
@@ -234,7 +266,7 @@ func (r *Runner) launch(ctx context.Context, req RunRequest) (*models.TaskReview
 	// only catches a still-pending/running pass, so a redelivery after
 	// completion needs its own check keyed on entry identity.
 	if req.EntryID != "" {
-		existing, err := r.store.FindRunByEntryID(ctx, req.EntryID)
+		existing, err := r.findRunByEntryForKind(ctx, req)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -252,7 +284,7 @@ func (r *Runner) launch(ctx context.Context, req RunRequest) (*models.TaskReview
 	// Resolve the reviewer and read the diff before creating a run row: both
 	// "no capable agent" and "nothing to review" are conditions the user should
 	// see immediately, and neither deserves a failed run in the history.
-	identity, err := r.resolver.Resolve(ctx, req.AgentProfileID)
+	identity, err := r.resolverForKind(req).Resolve(ctx, req.AgentProfileID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -266,6 +298,7 @@ func (r *Runner) launch(ctx context.Context, req RunRequest) (*models.TaskReview
 
 	run, err := r.store.CreateRun(ctx, taskservice.CreateRunRequest{
 		TaskID:         req.TaskID,
+		Kind:           req.Kind,
 		SessionID:      sessionID,
 		Trigger:        req.Trigger,
 		WorkflowStepID: req.WorkflowStepID,
@@ -278,20 +311,53 @@ func (r *Runner) launch(ctx context.Context, req RunRequest) (*models.TaskReview
 	}
 
 	runCtx, cancel := context.WithTimeout(r.backgroundContext(), runTimeout)
-	done := r.attach(req.TaskID, run.ID, cancel)
+	done := r.attach(slot, run.ID, cancel)
 	launched = true
 
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		defer r.release(req.TaskID)
+		defer r.release(slot)
 		defer cancel()
-		if err := r.execute(runCtx, req, run.ID, identity, files); err != nil {
+		if err := r.dispatchExecute(runCtx, req, run.ID, identity, files); err != nil {
 			r.logger.Warn("review run failed",
 				zap.String("task_id", req.TaskID), zap.String("run_id", run.ID), zap.Error(err))
 		}
 	}()
 	return run, done, nil
+}
+
+// dispatchExecute routes to the kind-specific pass body.
+func (r *Runner) dispatchExecute(ctx context.Context, req RunRequest, runID string, identity ReviewerIdentity, files []ChangedFile) error {
+	if req.Kind.Normalized() == models.ReviewKindObjectiveCheck {
+		return r.executeObjective(ctx, req, runID, identity, files)
+	}
+	return r.execute(ctx, req, runID, identity, files)
+}
+
+func kindSlotKey(req RunRequest) string {
+	return string(req.Kind.Normalized()) + "\x00" + req.TaskID
+}
+
+func (r *Runner) resolverForKind(req RunRequest) *Resolver {
+	if req.Kind.Normalized() == models.ReviewKindObjectiveCheck {
+		return r.objectiveResolver
+	}
+	return r.resolver
+}
+
+func (r *Runner) activeRunForKind(ctx context.Context, req RunRequest) (*models.TaskReviewRun, error) {
+	if req.Kind.Normalized() == models.ReviewKindObjectiveCheck {
+		return r.store.ActiveAssessmentRun(ctx, req.TaskID)
+	}
+	return r.store.ActiveRun(ctx, req.TaskID)
+}
+
+func (r *Runner) findRunByEntryForKind(ctx context.Context, req RunRequest) (*models.TaskReviewRun, error) {
+	if req.Kind.Normalized() == models.ReviewKindObjectiveCheck {
+		return r.store.FindAssessmentRunByEntryID(ctx, req.EntryID)
+	}
+	return r.store.FindRunByEntryID(ctx, req.EntryID)
 }
 
 // Cancel stops a review pass and records the cancellation.

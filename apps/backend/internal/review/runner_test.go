@@ -26,6 +26,11 @@ type fakeStore struct {
 	statuses   []models.ReviewRunStatus
 	publishErr error
 	nextID     int
+
+	// objective_check path (see runner_objective_test.go).
+	activeObjective *models.TaskReviewRun
+	assessments     []taskservice.PublishAssessmentRequest
+	gateFailures    []fakeGateFailure
 }
 
 type fakeFailure struct {
@@ -44,6 +49,7 @@ func (f *fakeStore) CreateRun(_ context.Context, req taskservice.CreateRunReques
 	run := &models.TaskReviewRun{
 		ID:             fmt.Sprintf("run-%d", f.nextID),
 		TaskID:         req.TaskID,
+		Kind:           req.Kind.Normalized(),
 		SessionID:      req.SessionID,
 		Trigger:        req.Trigger,
 		WorkflowStepID: req.WorkflowStepID,

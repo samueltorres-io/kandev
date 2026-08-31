@@ -41,20 +41,29 @@ func buildReviewComponents(p routeParams) reviewComponents {
 	// auth disabled) are unaffected.
 	service.SetTaskAuthorizer(p.taskSvc.AuthorizeTaskAccess)
 
+	engine := utilitytemplate.NewEngine()
 	resolver := review.NewResolver(
 		reviewProfileLookup{profiles: p.agentSettingsRepo},
-		reviewUtilityLookup{agents: p.services.Utility},
+		reviewUtilityLookup{agents: p.services.Utility, agentID: utilitystore.CodeReviewAgentID},
+		reviewDefaultsLookup{settings: p.services.User},
+	)
+	objectiveResolver := review.NewResolver(
+		reviewProfileLookup{profiles: p.agentSettingsRepo},
+		reviewUtilityLookup{agents: p.services.Utility, agentID: utilitystore.ObjectiveCheckAgentID},
 		reviewDefaultsLookup{settings: p.services.User},
 	)
 	runner := review.NewRunner(review.RunnerDeps{
-		Store:       service,
-		Resolver:    resolver,
-		Changes:     handlers.NewReviewChangeSource(p.lifecycleMgr, reviewSessionReader{repo: p.taskRepo}),
-		Inference:   reviewInference{session: p.lifecycleMgr, host: p.hostUtilityMgr},
-		Prompts:     review.NewTemplatePromptBuilder(reviewTemplateSource{agents: p.services.Utility, engine: utilitytemplate.NewEngine()}),
-		TaskContext: reviewTaskContext{tasks: p.taskSvc},
-		Sessions:    reviewSessionLookup{sessions: p.taskRepo},
-		Logger:      p.log,
+		Store:             service,
+		Resolver:          resolver,
+		ObjectiveResolver: objectiveResolver,
+		Changes:           handlers.NewReviewChangeSource(p.lifecycleMgr, reviewSessionReader{repo: p.taskRepo}),
+		Inference:         reviewInference{session: p.lifecycleMgr, host: p.hostUtilityMgr},
+		Prompts:           review.NewTemplatePromptBuilder(reviewTemplateSource{agents: p.services.Utility, engine: engine}),
+		ObjectivePrompts:  review.NewObjectiveTemplatePromptBuilder(objectiveTemplateSource{agents: p.services.Utility, engine: engine}),
+		Documents:         objectiveDocumentLookup{docs: p.taskRepo},
+		TaskContext:       reviewTaskContext{tasks: p.taskSvc},
+		Sessions:          reviewSessionLookup{sessions: p.taskRepo},
+		Logger:            p.log,
 	})
 	return reviewComponents{service: service, runner: runner}
 }
@@ -129,6 +138,9 @@ func (l reviewProfileLookup) ReviewerProfile(ctx context.Context, profileID stri
 // supplies the default reviewer identity for the on-demand path.
 type reviewUtilityLookup struct {
 	agents utilityAgentGetter
+	// agentID selects which built-in utility agent supplies the default
+	// identity: code-review or objective-check.
+	agentID string
 }
 
 type utilityAgentGetter interface {
@@ -139,7 +151,7 @@ func (l reviewUtilityLookup) CodeReviewAgent(ctx context.Context) (string, strin
 	if l.agents == nil {
 		return "", "", false, false, nil
 	}
-	agent, err := l.agents.GetAgentByID(ctx, utilitystore.CodeReviewAgentID)
+	agent, err := l.agents.GetAgentByID(ctx, l.agentID)
 	if err != nil || agent == nil {
 		return "", "", false, false, nil
 	}
@@ -150,7 +162,7 @@ func (l reviewUtilityLookup) CodeReviewAgentProfile(ctx context.Context) (string
 	if l.agents == nil {
 		return "", false, false, nil
 	}
-	agent, err := l.agents.GetAgentByID(ctx, utilitystore.CodeReviewAgentID)
+	agent, err := l.agents.GetAgentByID(ctx, l.agentID)
 	if err != nil || agent == nil {
 		return "", false, false, err
 	}
@@ -213,6 +225,60 @@ func (s reviewTemplateSource) ResolveTemplate(_ context.Context, template string
 	// than being sent to the model as a literal "{{Var}}".
 	return s.engine.ResolveWithOptions(template, &utilitytemplate.Context{Custom: values},
 		utilitytemplate.ResolveOptions{MissingAsEmpty: true})
+}
+
+// objectiveTemplateSource serves the objective-check utility agent's stored
+// prompt.
+type objectiveTemplateSource struct {
+	agents utilityAgentGetter
+	engine *utilitytemplate.Engine
+}
+
+func (s objectiveTemplateSource) ObjectivePromptTemplate(ctx context.Context) (string, error) {
+	if s.agents == nil {
+		return "", fmt.Errorf("utility agents are not available")
+	}
+	agent, err := s.agents.GetAgentByID(ctx, utilitystore.ObjectiveCheckAgentID)
+	if err != nil {
+		return "", fmt.Errorf("load objective-check prompt: %w", err)
+	}
+	if agent == nil {
+		return "", fmt.Errorf("the objective-check utility agent is missing")
+	}
+	return agent.Prompt, nil
+}
+
+func (s objectiveTemplateSource) ResolveTemplate(_ context.Context, template string, values map[string]string) (string, error) {
+	return s.engine.ResolveWithOptions(template, &utilitytemplate.Context{Custom: values},
+		utilitytemplate.ResolveOptions{MissingAsEmpty: true})
+}
+
+// objectiveDocumentLookup supplies the task's plan/spec documents for the
+// objective context.
+type objectiveDocumentLookup struct {
+	docs objectiveDocLister
+}
+
+type objectiveDocLister interface {
+	ListDocuments(ctx context.Context, taskID string) ([]*taskmodels.TaskDocument, error)
+}
+
+func (l objectiveDocumentLookup) ObjectiveDocuments(ctx context.Context, taskID string) ([]review.ObjectiveDoc, error) {
+	if l.docs == nil {
+		return nil, nil
+	}
+	docs, err := l.docs.ListDocuments(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]review.ObjectiveDoc, 0, len(docs))
+	for _, d := range docs {
+		if d == nil || (d.Key != "plan" && d.Key != "spec") {
+			continue
+		}
+		out = append(out, review.ObjectiveDoc{Kind: d.Key, Body: d.Content, UpdatedAt: d.UpdatedAt})
+	}
+	return out, nil
 }
 
 // reviewInference runs one reviewer prompt.

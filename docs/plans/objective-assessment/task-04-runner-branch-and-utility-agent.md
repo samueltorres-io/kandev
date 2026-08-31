@@ -1,7 +1,7 @@
 ---
 id: "04-runner-branch-and-utility-agent"
 title: "Runner objective_check branch + objective-check utility agent"
-status: pending
+status: done
 wave: 3
 depends_on: ["02-service-and-events", "03-objective-extraction-and-parser"]
 plan: "plan.md"

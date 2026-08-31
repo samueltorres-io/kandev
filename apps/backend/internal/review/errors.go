@@ -14,6 +14,38 @@ const (
 	CodeCancelled            = "review_cancelled"
 )
 
+// Objective-assessment error codes. Same shape as the review codes above, with
+// an objective_ prefix so the Review surface can branch on which pass failed.
+const (
+	CodeObjectiveAgentUnavailable     = "objective_agent_unavailable"
+	CodeObjectiveWorkspaceUnavailable = "objective_workspace_unavailable"
+	CodeObjectiveNoChanges            = "objective_no_changes"
+	CodeObjectiveNoObjective          = "objective_no_objective"
+	CodeObjectiveUnparseableResponse  = "objective_unparseable_response"
+	CodeObjectiveExecutionFailed      = "objective_execution_failed"
+	CodeObjectiveCancelled            = "objective_cancelled"
+)
+
+// CodeForObjective maps an error to the objective-assessment run error code.
+func CodeForObjective(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, ErrAgentUnavailable):
+		return CodeObjectiveAgentUnavailable
+	case errors.Is(err, ErrWorkspaceUnavailable):
+		return CodeObjectiveWorkspaceUnavailable
+	case errors.Is(err, ErrNoChanges):
+		return CodeObjectiveNoChanges
+	case errors.Is(err, ErrNoObjective):
+		return CodeObjectiveNoObjective
+	case errors.Is(err, ErrUnparseableResponse):
+		return CodeObjectiveUnparseableResponse
+	default:
+		return CodeObjectiveExecutionFailed
+	}
+}
+
 var (
 	// ErrAgentUnavailable means no inference-capable agent and model could be
 	// resolved for the run: nothing configured, no usable model, or the named
