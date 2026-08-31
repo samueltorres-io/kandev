@@ -1,7 +1,7 @@
 ---
 id: "08-objective-panel"
 title: "Objective panel: verdict banner, criterion checklist, send-to-agent"
-status: pending
+status: done
 wave: 5
 depends_on: ["07-frontend-state"]
 plan: "plan.md"

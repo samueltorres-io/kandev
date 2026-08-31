@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@kandev/ui/dialog";
 import { useReviewSidebarResize } from "@/hooks/use-review-sidebar-resize";
 import type { TaskPR } from "@/lib/types/github";
@@ -9,6 +9,7 @@ import { ReviewDiffList } from "./review-diff-list";
 import { ReviewFileTree } from "./review-file-tree";
 import { ReviewPRDiffBoundary, shouldBlockReviewForPR } from "./review-dialog-pr-state";
 import { ReviewTopBar } from "./review-top-bar";
+import { reviewFileKey } from "./types";
 import { useTranslation } from "react-i18next";
 
 type ReviewDialogSurfaceProps = {
@@ -96,6 +97,16 @@ export function ReviewDialogSurface(props: ReviewDialogSurfaceProps) {
     [setFilter, handleSelectFile],
   );
 
+  const changedFileKeys = useMemo(
+    () =>
+      new Set(
+        state.allFiles.map((file) =>
+          reviewFileKey({ path: file.path, repository_name: file.repository_name }),
+        ),
+      ),
+    [state.allFiles],
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -117,6 +128,7 @@ export function ReviewDialogSurface(props: ReviewDialogSurfaceProps) {
           onSendComments={state.handleSendComments}
           onClose={() => onOpenChange(false)}
           onSelectFile={navigateToFindingFile}
+          changedFileKeys={changedFileKeys}
           onRequestWalkthrough={props.onRequestWalkthrough}
           requestWalkthroughDisabled={state.allFiles.length === 0}
           getPendingComments={state.getPendingComments}

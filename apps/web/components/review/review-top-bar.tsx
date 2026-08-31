@@ -25,8 +25,12 @@ import { getWebSocketClient } from "@/lib/ws/connection";
 import { updateUserSettings } from "@/lib/api";
 import { VcsSplitButton } from "@/components/vcs-split-button";
 import { isRunActive } from "@/lib/review/findings";
+import { useTaskObjective } from "@/hooks/domains/objective/use-task-objective";
+import { useSendCriterionToAgent } from "@/hooks/domains/objective/use-send-criterion-to-agent";
 import { FixCommentsButton } from "./review-fix-comments-button";
 import { ReviewRunButton } from "./review-run-button";
+import { ObjectiveRunButton } from "./objective-run-button";
+import { ObjectiveButton } from "./objective-button";
 import { ReviewFindingsButton } from "./review-findings-button";
 import { ReviewPRSelector } from "./review-pr-selector";
 import type { TaskPR } from "@/lib/types/github";
@@ -46,6 +50,8 @@ type ReviewTopBarProps = {
   onClose: () => void;
   /** Selects a file in the review diff — used to jump to a finding's file. */
   onSelectFile: (fileKey: string) => void;
+  /** Composite keys of every changed file, for objective evidence navigation. */
+  changedFileKeys: Set<string>;
   onRequestWalkthrough?: () => void;
   requestWalkthroughDisabled?: boolean;
   getPendingComments: () => DiffComment[];
@@ -201,6 +207,34 @@ function ReviewWalkthroughButton({
   );
 }
 
+function ObjectiveControls({
+  taskId,
+  sessionId,
+  changedFileKeys,
+  onNavigateToFile,
+}: {
+  taskId: string | null;
+  sessionId: string;
+  changedFileKeys: Set<string>;
+  onNavigateToFile: (fileKey: string) => void;
+}) {
+  const objective = useTaskObjective(taskId);
+  const sendCriterionToAgent = useSendCriterionToAgent({ taskId, sessionId });
+  return (
+    <>
+      <ObjectiveRunButton taskId={taskId} sessionId={sessionId} activeRun={objective.activeRun} />
+      <ObjectiveButton
+        verdict={objective.verdict}
+        summary={objective.activeRun?.summary ?? ""}
+        criteria={objective.criteria}
+        changedFileKeys={changedFileKeys}
+        onNavigateToFile={onNavigateToFile}
+        onSendToAgent={sendCriterionToAgent}
+      />
+    </>
+  );
+}
+
 export const ReviewTopBar = memo(function ReviewTopBar({
   sessionId,
   reviewedCount,
@@ -214,6 +248,7 @@ export const ReviewTopBar = memo(function ReviewTopBar({
   onSendComments,
   onClose,
   onSelectFile,
+  changedFileKeys,
   onRequestWalkthrough,
   requestWalkthroughDisabled,
   getPendingComments,
@@ -277,6 +312,12 @@ export const ReviewTopBar = memo(function ReviewTopBar({
       )}
       <ReviewRunButton taskId={activeTaskId} sessionId={sessionId} activeRun={activeRun} />
       {!reviewRunning && <ReviewFindingsButton findings={findings} onSelectFile={onSelectFile} />}
+      <ObjectiveControls
+        taskId={activeTaskId}
+        sessionId={sessionId}
+        changedFileKeys={changedFileKeys}
+        onNavigateToFile={onSelectFile}
+      />
       <ReviewWalkthroughButton
         onRequestWalkthrough={onRequestWalkthrough}
         disabled={requestWalkthroughDisabled}
