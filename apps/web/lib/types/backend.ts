@@ -384,7 +384,8 @@ export type TaskStatusSummaryUpdatedPayload = {
 export type BackendMessageMap = SessionBackendMessageMap &
   OfficeBackendMessageMap &
   import("@/lib/types/http").WalkthroughBackendMessageMap &
-  import("@/lib/types/review").ReviewBackendMessageMap & {
+  import("@/lib/types/review").ReviewBackendMessageMap &
+  import("@/lib/types/objective").ObjectiveBackendMessageMap & {
     "kanban.update": BackendMessage<"kanban.update", KanbanUpdatePayload>;
     "task.created": BackendMessage<"task.created", TaskEventPayload>;
     "task.updated": BackendMessage<"task.updated", TaskEventPayload>;

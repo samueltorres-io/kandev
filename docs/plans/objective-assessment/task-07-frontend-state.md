@@ -1,7 +1,7 @@
 ---
 id: "07-frontend-state"
 title: "Frontend types, API client, store slice, WS handlers"
-status: pending
+status: done
 wave: 5
 depends_on: ["05-mcp-and-ws-actions"]
 plan: "plan.md"

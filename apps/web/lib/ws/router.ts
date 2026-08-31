@@ -26,6 +26,7 @@ import { registerTasksHandlers } from "@/lib/ws/handlers/tasks";
 import { registerTaskPlansHandlers } from "@/lib/ws/handlers/task-plans";
 import { registerWalkthroughsHandlers } from "@/lib/ws/handlers/walkthroughs";
 import { registerReviewHandlers } from "@/lib/ws/handlers/review";
+import { registerObjectiveHandlers } from "@/lib/ws/handlers/objective";
 import { registerTerminalsHandlers } from "@/lib/ws/handlers/terminals";
 import { registerTurnsHandlers } from "@/lib/ws/handlers/turns";
 import { registerSecretsHandlers } from "@/lib/ws/handlers/secrets";
@@ -46,6 +47,7 @@ export function registerWsHandlers(store: StoreApi<AppState>) {
     ...registerTaskPlansHandlers(store),
     ...registerWalkthroughsHandlers(store),
     ...registerReviewHandlers(store),
+    ...registerObjectiveHandlers(store),
     ...registerWorkflowsHandlers(store),
 
     ...registerWorkspacesHandlers(store),

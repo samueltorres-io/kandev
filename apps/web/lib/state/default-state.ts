@@ -16,6 +16,7 @@ import {
   defaultAutomationsState,
   defaultSystemState,
   defaultReviewState,
+  defaultObjectiveState,
 } from "./slices";
 import { mergeHydratedQuickChatSessions } from "@/lib/state/slices/ui/quick-chat-sync";
 import type { AgentRuntimeAvailability } from "@/lib/types/agent-runtime";
@@ -61,6 +62,7 @@ export const defaultState = {
   taskPlans: defaultSessionState.taskPlans,
   walkthroughs: defaultSessionState.walkthroughs,
   taskReview: defaultReviewState.taskReview,
+  taskObjective: defaultObjectiveState.taskObjective,
   queue: defaultSessionState.queue,
   terminal: defaultSessionRuntimeState.terminal,
   shell: defaultSessionRuntimeState.shell,
@@ -254,6 +256,7 @@ function mergeAgentReviewArtifacts(initialState: HydrationState) {
   return {
     walkthroughs: { ...defaultState.walkthroughs, ...initialState.walkthroughs },
     taskReview: { ...defaultState.taskReview, ...initialState.taskReview },
+    taskObjective: { ...defaultState.taskObjective, ...initialState.taskObjective },
   };
 }
 

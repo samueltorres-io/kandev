@@ -47,6 +47,7 @@ import {
   createSystemSlice,
   createPluginsSlice,
   createReviewSlice,
+  createObjectiveSlice,
   defaultWorkspaceState,
   defaultSettingsState,
   defaultSessionState,
@@ -64,6 +65,7 @@ import {
   defaultSystemState,
   defaultPluginsState,
   defaultReviewState,
+  defaultObjectiveState,
   type WorkspaceState,
   type ExecutorsState,
   type SettingsAgentsState,
@@ -101,6 +103,7 @@ import {
   type OfficeSliceActions,
   type PluginsSliceActions,
   type ReviewSliceActions,
+  type ObjectiveSliceActions,
   type KanbanSlice,
 } from "./slices";
 import type {
@@ -236,6 +239,9 @@ export type AppState = KanbanSlice & {
 
   // Review slice (actions merged via ReviewSliceActions intersection on AppState)
   taskReview: (typeof defaultReviewState)["taskReview"];
+
+  // Objective-assessment slice (actions merged via ObjectiveSliceActions intersection on AppState)
+  taskObjective: (typeof defaultObjectiveState)["taskObjective"];
 
   // UI slice
   previewPanel: (typeof defaultUIState)["previewPanel"];
@@ -601,7 +607,8 @@ export type AppState = KanbanSlice & {
   AuthSliceActions &
   AutomationsSliceActions &
   PluginsSliceActions &
-  ReviewSliceActions;
+  ReviewSliceActions &
+  ObjectiveSliceActions;
 
 // Most callers hydrate a fully-shaped slice per top-level key (see
 // mergeInitialState / hydrateState), but `system` is a grab-bag of many
@@ -664,6 +671,9 @@ export function createAppStore(initialState?: HydrationState) {
       // arguments (CodeQL js/superfluous-trailing-arguments).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...createReviewSlice(set as any),
+      // createObjectiveSlice only needs `set`, like createReviewSlice.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...createObjectiveSlice(set as any),
       // Re-assert merged initial state so caller-supplied values win over slice defaults.
       ...buildStateOverrides(merged),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
