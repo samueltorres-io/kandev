@@ -53,6 +53,22 @@ type reviewRepo interface {
 	UpdateTaskReviewFindingStatus(ctx context.Context, findingID string, status models.ReviewFindingStatus, resolvedAt *time.Time) error
 	DeleteSupersededTaskReviewFindings(ctx context.Context, taskID, runID string, keys []models.ReviewFindingKey) ([]string, error)
 	DeleteTaskReviewByTask(ctx context.Context, taskID string) error
+
+	// Objective assessment (kind = objective_check).
+	CreateTaskObjectiveCriteria(ctx context.Context, criteria []*models.TaskObjectiveCriterion) error
+	ListTaskObjectiveCriteria(ctx context.Context, taskID, runID string) ([]*models.TaskObjectiveCriterion, error)
+	DeleteTaskObjectiveCriteriaByRun(ctx context.Context, runID string) error
+	ListTaskObjectiveRuns(ctx context.Context, taskID string, limit int) ([]*models.TaskReviewRun, error)
+	ListActiveTaskObjectiveRuns(ctx context.Context, taskID string) ([]*models.TaskReviewRun, error)
+	GetLatestCompletedTaskObjectiveRun(ctx context.Context, taskID string) (*models.TaskReviewRun, error)
+	DeleteTaskObjectiveByTask(ctx context.Context, taskID string) error
+}
+
+// objectiveGateWriter records the synthetic workflow-step quorum decision that
+// makes a gated objective_check hold or release a step's outbound transition.
+// Implemented in the workflow layer (WO-06); nil for every non-workflow caller.
+type objectiveGateWriter interface {
+	WriteObjectiveGateDecision(ctx context.Context, taskID, workflowStepID, decision, note string) error
 }
 
 // ReviewService is the single write path for native code-review runs and
@@ -67,6 +83,15 @@ type ReviewService struct {
 	// built-in review runner / auth disabled). Mirrors PlanService and
 	// WalkthroughService.
 	authorizeTask func(ctx context.Context, taskID string) error
+	// gateWriter is set by the workflow layer so a gated objective_check
+	// completion can record its approve/reject decision. Nil-safe.
+	gateWriter objectiveGateWriter
+}
+
+// SetObjectiveGateWriter wires the workflow-step decision writer used by gated
+// run_objective_check actions (WO-06). Safe to leave unset.
+func (s *ReviewService) SetObjectiveGateWriter(w objectiveGateWriter) {
+	s.gateWriter = w
 }
 
 // NewReviewService creates a new code-review service.
@@ -95,7 +120,11 @@ func (s *ReviewService) authorize(ctx context.Context, taskID string) error {
 
 // CreateRunRequest describes a new review pass.
 type CreateRunRequest struct {
-	TaskID         string
+	TaskID string
+	// Kind selects the pass kind. The zero value normalizes to code_review so
+	// every existing caller is unchanged; the objective runner sets
+	// ReviewKindObjectiveCheck.
+	Kind           models.ReviewRunKind
 	SessionID      string
 	Trigger        models.ReviewRunTrigger
 	WorkflowStepID string
@@ -115,6 +144,7 @@ func (s *ReviewService) CreateRun(ctx context.Context, req CreateRunRequest) (*m
 	}
 	run := &models.TaskReviewRun{
 		TaskID:         req.TaskID,
+		Kind:           req.Kind.Normalized(),
 		SessionID:      req.SessionID,
 		Trigger:        req.Trigger,
 		WorkflowStepID: req.WorkflowStepID,

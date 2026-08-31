@@ -197,15 +197,26 @@ const (
 
 	// Native code review. The *.run / *.cancel / *.get / *.finding.update /
 	// *.clear actions are client requests; the rest are server notifications.
-	ActionTaskReviewRun                 = "task.review.run"
-	ActionTaskReviewCancel              = "task.review.cancel"
-	ActionTaskReviewGet                 = "task.review.get"
-	ActionTaskReviewFindingUpdate       = "task.review.finding.update"
-	ActionTaskReviewClear               = "task.review.clear"
-	ActionTaskReviewRunUpdated          = "task.review.run_updated"
-	ActionTaskReviewFindingsPublished   = "task.review.findings_published"
-	ActionTaskReviewFindingUpdated      = "task.review.finding_updated"
-	ActionTaskReviewCleared             = "task.review.cleared"
+	ActionTaskReviewRun               = "task.review.run"
+	ActionTaskReviewCancel            = "task.review.cancel"
+	ActionTaskReviewGet               = "task.review.get"
+	ActionTaskReviewFindingUpdate     = "task.review.finding.update"
+	ActionTaskReviewClear             = "task.review.clear"
+	ActionTaskReviewRunUpdated        = "task.review.run_updated"
+	ActionTaskReviewFindingsPublished = "task.review.findings_published"
+	ActionTaskReviewFindingUpdated    = "task.review.finding_updated"
+	ActionTaskReviewCleared           = "task.review.cleared"
+
+	// Objective assessment. *.run / *.cancel / *.get are client requests
+	// (WO-05); the rest are server notifications.
+	ActionTaskObjectiveRun        = "task.objective.run"
+	ActionTaskObjectiveCancel     = "task.objective.cancel"
+	ActionTaskObjectiveGet        = "task.objective.get"
+	ActionTaskObjectiveClear      = "task.objective.clear"
+	ActionTaskObjectiveRunUpdated = "task.objective.run_updated"
+	ActionTaskObjectivePublished  = "task.objective.published"
+	ActionTaskObjectiveCleared    = "task.objective.cleared"
+
 	ActionAgentUpdated                  = "agent.updated"
 	ActionAgentAvailableUpdated         = "agent.available.updated"
 	ActionAgentInstallStarted           = "agent.install.started"

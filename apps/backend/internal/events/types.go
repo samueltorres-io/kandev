@@ -114,6 +114,13 @@ const (
 	TaskReviewCleared           = "task_review.cleared"
 )
 
+// Event types for objective assessment (agent-judged verdict + criterion checklist)
+const (
+	TaskObjectiveRunUpdated = "task_objective.run_updated"
+	TaskObjectivePublished  = "task_objective.published"
+	TaskObjectiveCleared    = "task_objective.cleared"
+)
+
 // Event types for session turns
 const (
 	TurnStarted   = "turn.started"

@@ -140,6 +140,22 @@ func (r *Repository) GetTaskObjectiveCriterion(ctx context.Context, criterionID 
 	return c, err
 }
 
+// DeleteTaskObjectiveByTask removes a task's objective-assessment runs and their
+// criteria, leaving Native Code Review state untouched. Backs
+// ReviewService.ClearTaskAssessment.
+func (r *Repository) DeleteTaskObjectiveByTask(ctx context.Context, taskID string) error {
+	statements := []string{
+		`DELETE FROM task_objective_criteria WHERE task_id = ?`,
+		`DELETE FROM task_review_runs WHERE task_id = ? AND kind = 'objective_check'`,
+	}
+	for _, stmt := range statements {
+		if _, err := r.db.ExecContext(ctx, r.db.Rebind(stmt), taskID); err != nil {
+			return fmt.Errorf("failed to delete task objective state: %w", err)
+		}
+	}
+	return nil
+}
+
 // DeleteTaskObjectiveCriteriaByRun removes every criterion of one run. Used when
 // a re-run supersedes a prior assessment on a task that clears its state.
 func (r *Repository) DeleteTaskObjectiveCriteriaByRun(ctx context.Context, runID string) error {

@@ -2264,6 +2264,12 @@ func ValidObjectiveCriterionStatus(s ObjectiveCriterionStatus) bool {
 	}
 }
 
+// ObjectiveCheckRole is the reserved workflow-step quorum role a gated
+// objective_check writes its synthetic approve/reject decision under. It is
+// excluded from the human role picker so a gate decision can never be conflated
+// with a human quorum decision (see the system design's Workflow gate section).
+const ObjectiveCheckRole = "objective-check"
+
 // ObjectiveCriterionSource records where a criterion came from: derived by the
 // assessing agent from the objective text, or copied verbatim from an
 // acceptance-criteria list in a task-attached document.

@@ -1,7 +1,7 @@
 ---
 id: "02-service-and-events"
 title: "ReviewService.PublishAssessment / GetTaskAssessment + bus/WS events"
-status: pending
+status: done
 wave: 2
 depends_on: ["01-schema-and-repository"]
 plan: "plan.md"
