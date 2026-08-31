@@ -57,6 +57,7 @@ func buildWorkflowCallbacks(svc *Service) engine.MapRegistry {
 	}
 	if svc.reviewRunner != nil {
 		r[engine.ActionRunCodeReview] = &runCodeReviewCallback{svc: svc}
+		r[engine.ActionRunObjectiveCheck] = &runObjectiveCheckCallback{svc: svc}
 	}
 	if svc.engineTaskCreator != nil {
 		r[engine.ActionCreateChildTask] = engine.CreateChildTaskCallback{Creator: svc.engineTaskCreator}
@@ -308,6 +309,40 @@ func (c *runCodeReviewCallback) Execute(ctx context.Context, in engine.ActionInp
 	})
 	if err != nil {
 		c.svc.logger.Warn("workflow step code review did not start",
+			zap.String("task_id", in.State.TaskID),
+			zap.String("workflow_step_id", in.Step.ID),
+			zap.Error(err))
+	}
+	return engine.ActionResult{}, nil
+}
+
+// runObjectiveCheckCallback starts an objective-assessment pass when the task
+// enters the step. Like code review it never blocks step entry: a failed
+// assessment records its reason and, when gated, writes a reject decision that
+// the outbound WaitForQuorumGuard reads. The one carve-out (objective_no_objective
+// writes no decision) is handled inside the runner's fail path.
+type runObjectiveCheckCallback struct {
+	svc *Service
+}
+
+func (c *runObjectiveCheckCallback) Execute(ctx context.Context, in engine.ActionInput) (engine.ActionResult, error) {
+	profileID, gate := "", false
+	if in.Action.RunObjectiveCheck != nil {
+		profileID = in.Action.RunObjectiveCheck.AgentProfileID
+		gate = in.Action.RunObjectiveCheck.Gate
+	}
+	_, err := c.svc.reviewRunner.Launch(ctx, review.RunRequest{
+		TaskID:         in.State.TaskID,
+		Kind:           taskmodels.ReviewKindObjectiveCheck,
+		Gate:           gate,
+		SessionID:      in.State.SessionID,
+		AgentProfileID: profileID,
+		Trigger:        taskmodels.ReviewTriggerWorkflowStep,
+		WorkflowStepID: in.Step.ID,
+		EntryID:        in.EntryID,
+	})
+	if err != nil {
+		c.svc.logger.Warn("workflow step objective check did not start",
 			zap.String("task_id", in.State.TaskID),
 			zap.String("workflow_step_id", in.Step.ID),
 			zap.Error(err))

@@ -44,6 +44,7 @@ const (
 	ActionSetWorkflowData   ActionKind = "set_workflow_data"
 	ActionSetSessionMode    ActionKind = "set_session_mode"
 	ActionRunCodeReview     ActionKind = "run_code_review"
+	ActionRunObjectiveCheck ActionKind = "run_objective_check"
 
 	// New Phase 2 action kinds (ADR-0004). Defined and exposed via callbacks
 	// that intentionally return ErrActionNotYetWired — they will be wired
@@ -94,6 +95,7 @@ type Action struct {
 	SetWorkflowData            *SetWorkflowDataAction
 	SetSessionMode             *SetSessionModeAction
 	RunCodeReview              *RunCodeReviewAction
+	RunObjectiveCheck          *RunObjectiveCheckAction
 	QueueRun                   *QueueRunAction
 	ClearDecisions             *ClearDecisionsAction
 	QueueRunForEachParticipant *QueueRunForEachParticipantAction
@@ -157,6 +159,15 @@ type SetSessionModeAction struct {
 // utility agent". See docs/specs/agents/requirements/native-code-review.md.
 type RunCodeReviewAction struct {
 	AgentProfileID string
+}
+
+// RunObjectiveCheckAction starts an objective-assessment pass on step entry.
+// AgentProfileID is optional (empty means "use the objective-check utility
+// agent"). Gate, when true, records a synthetic objective-check quorum
+// decision on completion so a non-met verdict blocks the outbound transition.
+type RunObjectiveCheckAction struct {
+	AgentProfileID string
+	Gate           bool
 }
 
 // QueueRunAction represents the Phase 2 "queue a run on a target task/agent"
@@ -348,6 +359,14 @@ func CompileOnEnterAction(action wfmodels.OnEnterAction) (Action, bool) {
 		return Action{
 			Kind:          ActionRunCodeReview,
 			RunCodeReview: &RunCodeReviewAction{AgentProfileID: readReviewAgentProfileID(action.Config)},
+		}, true
+	case wfmodels.OnEnterRunObjectiveCheck:
+		return Action{
+			Kind: ActionRunObjectiveCheck,
+			RunObjectiveCheck: &RunObjectiveCheckAction{
+				AgentProfileID: readReviewAgentProfileID(action.Config),
+				Gate:           readObjectiveGate(action.Config),
+			},
 		}, true
 	case wfmodels.OnEnterClearDecisions:
 		return Action{
@@ -548,6 +567,16 @@ func readReviewAgentProfileID(config map[string]any) string {
 	}
 	profileID, _ := config[wfmodels.ReviewAgentProfileConfigKey].(string)
 	return profileID
+}
+
+// readObjectiveGate reads the optional "gate" bool for a run_objective_check
+// action. Absent or non-bool means ungated (never blocks a transition).
+func readObjectiveGate(config map[string]any) bool {
+	if config == nil {
+		return false
+	}
+	gate, _ := config[wfmodels.ObjectiveGateConfigKey].(bool)
+	return gate
 }
 
 func readStepID(config map[string]any) (string, error) {

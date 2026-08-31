@@ -2207,6 +2207,7 @@ func buildHTTPServer(
 		gateway:                       gateway,
 		taskSvc:                       services.Task,
 		taskRepo:                      repos.Task,
+		workflowRepo:                  repos.Workflow,
 		officeRepo:                    repos.Office,
 		analyticsRepo:                 repos.Analytics,
 		orchestratorSvc:               orchestratorSvc,

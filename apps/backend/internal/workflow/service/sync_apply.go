@@ -253,7 +253,7 @@ func (s *Service) reviewProfileMatcherForSync(existing *models.WorkflowStep) mod
 	preserved := make(map[string][]string)
 	if existing != nil && s.resolveProfile != nil {
 		for _, action := range existing.Events.OnEnter {
-			if action.Type != models.OnEnterRunCodeReview || action.Config == nil {
+			if (action.Type != models.OnEnterRunCodeReview && action.Type != models.OnEnterRunObjectiveCheck) || action.Config == nil {
 				continue
 			}
 			profileID, ok := action.Config[models.ReviewAgentProfileConfigKey].(string)
@@ -338,7 +338,7 @@ func findReviewProfileRebindings(existing, desired models.StepEvents) []profileR
 func reviewProfileIDs(events models.StepEvents) []string {
 	var profileIDs []string
 	for _, action := range events.OnEnter {
-		if action.Type != models.OnEnterRunCodeReview || action.Config == nil {
+		if (action.Type != models.OnEnterRunCodeReview && action.Type != models.OnEnterRunObjectiveCheck) || action.Config == nil {
 			continue
 		}
 		profileID, _ := action.Config[models.ReviewAgentProfileConfigKey].(string)

@@ -109,6 +109,7 @@ var actionKindConstants = map[ActionKind]ActionKind{
 	ActionKind("ActionResetAgentContext"):          ActionResetAgentContext,
 	ActionKind("ActionSetSessionMode"):             ActionSetSessionMode,
 	ActionKind("ActionRunCodeReview"):              ActionRunCodeReview,
+	ActionKind("ActionRunObjectiveCheck"):          ActionRunObjectiveCheck,
 	ActionKind("ActionClearDecisions"):             ActionClearDecisions,
 	ActionKind("ActionQueueRunForEachParticipant"): ActionQueueRunForEachParticipant,
 	ActionKind("ActionQueueRun"):                   ActionQueueRun,

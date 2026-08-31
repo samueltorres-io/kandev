@@ -92,6 +92,7 @@ import (
 	webembedded "github.com/kandev/kandev/internal/webapp/embedded"
 	workflowcontroller "github.com/kandev/kandev/internal/workflow/controller"
 	workflowhandlers "github.com/kandev/kandev/internal/workflow/handlers"
+	workflowrepository "github.com/kandev/kandev/internal/workflow/repository"
 	"github.com/kandev/kandev/internal/workflowsync"
 	"github.com/kandev/kandev/internal/worktree"
 	ws "github.com/kandev/kandev/pkg/websocket"
@@ -635,6 +636,7 @@ type routeParams struct {
 	gateway                       *gateways.Gateway
 	taskSvc                       *taskservice.Service
 	taskRepo                      *sqliterepo.Repository
+	workflowRepo                  *workflowrepository.Repository
 	officeRepo                    *officesqlite.Repository
 	analyticsRepo                 analyticsrepository.Repository
 	orchestratorSvc               *orchestrator.Service

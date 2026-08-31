@@ -41,11 +41,24 @@ const (
 	// how a different model can review than implemented. A failed review does
 	// not block the transition.
 	OnEnterRunCodeReview OnEnterActionType = "run_code_review"
+
+	// OnEnterRunObjectiveCheck starts an objective-assessment pass when the
+	// step is entered, so a "did this do what was asked?" check can sit
+	// between an implement step and a human gate. The optional
+	// "agent_profile_id" config key selects the assessing profile; the "gate"
+	// config key (bool), when true, makes a non-met verdict block the step's
+	// outbound transition via a synthetic objective-check quorum decision.
+	OnEnterRunObjectiveCheck OnEnterActionType = "run_objective_check"
 )
 
 // ReviewAgentProfileConfigKey is the on_enter action config key naming the
-// agent profile that should perform a run_code_review pass.
+// agent profile that should perform a run_code_review or run_objective_check
+// pass.
 const ReviewAgentProfileConfigKey = "agent_profile_id"
+
+// ObjectiveGateConfigKey is the run_objective_check config key (bool) that
+// turns the assessment into a transition gate.
+const ObjectiveGateConfigKey = "gate"
 
 // OnTurnStartActionType represents the type of action to execute when a user sends a message.
 type OnTurnStartActionType string

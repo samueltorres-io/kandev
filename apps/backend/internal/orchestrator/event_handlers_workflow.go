@@ -2440,7 +2440,7 @@ dispatchLoop:
 				result.aborted = true
 				break dispatchLoop
 			}
-		case wfmodels.OnEnterQueueRun, wfmodels.OnEnterRunCodeReview:
+		case wfmodels.OnEnterQueueRun, wfmodels.OnEnterRunCodeReview, wfmodels.OnEnterRunObjectiveCheck:
 			// Engine-owned per the spec, but their on_enter dispatch (AC-A7/
 			// AC-A8) is explicitly deferred to a later Build round — see
 			// docs/specs/workflow-on-enter-action-dispatch/spec.md. This is a

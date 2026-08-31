@@ -1196,6 +1196,24 @@ func (r *Repository) ClearStepDecisions(ctx context.Context, taskID, stepID stri
 	return rows, nil
 }
 
+// DeleteStepDecisionsByRole removes every decision recorded under one role for
+// a (task, step). Backs the objective-check gate's delete-then-insert: a re-run
+// replaces the prior synthetic decision rather than appending, and human
+// decisions under other roles are untouched.
+func (r *Repository) DeleteStepDecisionsByRole(ctx context.Context, taskID, stepID, role string) (int64, error) {
+	if taskID == "" || stepID == "" || role == "" {
+		return 0, errors.New("task_id, step_id, and role are required")
+	}
+	res, err := r.db.ExecContext(ctx, r.db.Rebind(
+		`DELETE FROM workflow_step_decisions WHERE task_id = ? AND step_id = ? AND role = ?`,
+	), taskID, stepID, role)
+	if err != nil {
+		return 0, fmt.Errorf("delete step decisions by role: %w", err)
+	}
+	rows, _ := res.RowsAffected()
+	return rows, nil
+}
+
 // validParticipantRole mirrors the workflow_step_participants CHECK constraint.
 func validParticipantRole(role models.ParticipantRole) bool {
 	switch role {

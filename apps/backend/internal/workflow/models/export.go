@@ -343,7 +343,7 @@ func remapReviewProfile(events StepEvents, fromKey, toKey string, lookup func(an
 	result := events
 	result.OnEnter = make([]OnEnterAction, 0, len(events.OnEnter))
 	for _, a := range events.OnEnter {
-		if a.Type == OnEnterRunCodeReview && a.Config != nil {
+		if (a.Type == OnEnterRunCodeReview || a.Type == OnEnterRunObjectiveCheck) && a.Config != nil {
 			if cfg, ok := remapConfigKey(a.Config, fromKey, toKey, lookup); ok {
 				a = OnEnterAction{Type: a.Type, Config: cfg}
 			} else if _, exists := a.Config[fromKey]; exists {

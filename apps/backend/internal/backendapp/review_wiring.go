@@ -16,6 +16,7 @@ import (
 	utilitymodels "github.com/kandev/kandev/internal/utility/models"
 	utilitystore "github.com/kandev/kandev/internal/utility/store"
 	utilitytemplate "github.com/kandev/kandev/internal/utility/template"
+	wfmodels "github.com/kandev/kandev/internal/workflow/models"
 )
 
 // The adapters below live in this package for cycle avoidance: internal/review
@@ -40,6 +41,9 @@ func buildReviewComponents(p routeParams) reviewComponents {
 	// to a task within its reach; unscoped callers (the built-in review runner,
 	// auth disabled) are unaffected.
 	service.SetTaskAuthorizer(p.taskSvc.AuthorizeTaskAccess)
+	if p.workflowRepo != nil {
+		service.SetObjectiveGateWriter(objectiveGateWriter{repo: p.workflowRepo})
+	}
 
 	engine := utilitytemplate.NewEngine()
 	resolver := review.NewResolver(
@@ -251,6 +255,38 @@ func (s objectiveTemplateSource) ObjectivePromptTemplate(ctx context.Context) (s
 func (s objectiveTemplateSource) ResolveTemplate(_ context.Context, template string, values map[string]string) (string, error) {
 	return s.engine.ResolveWithOptions(template, &utilitytemplate.Context{Custom: values},
 		utilitytemplate.ResolveOptions{MissingAsEmpty: true})
+}
+
+// objectiveGateWriter records the synthetic workflow-step quorum decision for a
+// gated run_objective_check. Delete-then-insert under the reserved
+// objective-check role: a re-run replaces the prior decision, and human quorum
+// decisions under other roles are never touched.
+type objectiveGateWriter struct {
+	repo objectiveDecisionRepo
+}
+
+type objectiveDecisionRepo interface {
+	DeleteStepDecisionsByRole(ctx context.Context, taskID, stepID, role string) (int64, error)
+	RecordStepDecision(ctx context.Context, d *wfmodels.WorkflowStepDecision) error
+}
+
+func (w objectiveGateWriter) WriteObjectiveGateDecision(ctx context.Context, taskID, stepID, decision, note string) error {
+	if w.repo == nil {
+		return nil
+	}
+	if _, err := w.repo.DeleteStepDecisionsByRole(ctx, taskID, stepID, taskmodels.ObjectiveCheckRole); err != nil {
+		return err
+	}
+	return w.repo.RecordStepDecision(ctx, &wfmodels.WorkflowStepDecision{
+		TaskID:        taskID,
+		StepID:        stepID,
+		ParticipantID: taskmodels.ObjectiveCheckRole + ":" + stepID,
+		Decision:      decision,
+		Note:          note,
+		DeciderType:   "system",
+		DeciderID:     taskmodels.ObjectiveCheckRole,
+		Role:          taskmodels.ObjectiveCheckRole,
+	})
 }
 
 // objectiveDocumentLookup supplies the task's plan/spec documents for the

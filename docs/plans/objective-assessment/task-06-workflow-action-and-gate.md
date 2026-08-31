@@ -1,7 +1,7 @@
 ---
 id: "06-workflow-action-and-gate"
 title: "run_objective_check workflow action + gate decision writer"
-status: pending
+status: done
 wave: 4
 depends_on: ["04-runner-branch-and-utility-agent"]
 plan: "plan.md"

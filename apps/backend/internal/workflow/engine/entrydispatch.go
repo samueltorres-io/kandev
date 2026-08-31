@@ -27,6 +27,7 @@ var sessionIndependentActionKinds = map[ActionKind]bool{
 	ActionQueueRunForEachParticipant: true,
 	ActionQueueRun:                   true,
 	ActionRunCodeReview:              true,
+	ActionRunObjectiveCheck:          true,
 	ActionEnsureParticipantSeat:      true,
 }
 
