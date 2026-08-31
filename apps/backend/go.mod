@@ -7,6 +7,7 @@ require (
 	github.com/UserExistsError/conpty v0.1.4
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/coder/acp-go-sdk v0.13.5
+	github.com/containerd/errdefs v1.0.0
 	github.com/creack/pty v1.1.24
 	github.com/gin-gonic/gin v1.9.1
 	github.com/godbus/dbus/v5 v5.1.0
@@ -19,6 +20,7 @@ require (
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/mark3labs/mcp-go v0.43.2
 	github.com/mattn/go-sqlite3 v1.14.33
+	github.com/mitchellh/mapstructure v1.5.0
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.0
 	github.com/nats-io/nats.go v1.31.0
@@ -55,7 +57,6 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
-	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
@@ -90,7 +91,6 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
-	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect

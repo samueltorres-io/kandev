@@ -278,6 +278,17 @@ func (r *Repository) runMigrations() error {
 	r.migrate.Apply("idx_task_review_runs_entry_id",
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_task_review_runs_entry_id ON task_review_runs(entry_id) WHERE entry_id != ''`)
 
+	// Objective assessment — a second run kind on task_review_runs plus its
+	// own criterion checklist table. kind defaults to code_review so existing
+	// rows and existing Native Code Review inserts stay correct; verdict is the
+	// rollup answer, empty for code-review runs and incomplete objective runs.
+	r.migrate.Apply("task_review_runs.kind", `ALTER TABLE task_review_runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'code_review'`)
+	r.migrate.Apply("task_review_runs.verdict", `ALTER TABLE task_review_runs ADD COLUMN verdict TEXT NOT NULL DEFAULT ''`)
+	r.migrate.Apply("idx_task_objective_criteria_task_run",
+		`CREATE INDEX IF NOT EXISTS idx_task_objective_criteria_task_run ON task_objective_criteria(task_id, run_id)`)
+	r.migrate.Apply("idx_task_objective_criteria_run",
+		`CREATE INDEX IF NOT EXISTS idx_task_objective_criteria_run ON task_objective_criteria(run_id)`)
+
 	// ADR 0005 Wave F — ensure the runner-projection tables exist so
 	// task SELECTs that reference them via correlated subquery don't
 	// fail. Required for tests and any environment where the workflow

@@ -1082,11 +1082,13 @@ const taskReviewSchemaDDL = `
 		id TEXT PRIMARY KEY,
 		task_id TEXT NOT NULL,
 		session_id TEXT NOT NULL DEFAULT '',
+		kind TEXT NOT NULL DEFAULT 'code_review',
 		trigger TEXT NOT NULL DEFAULT 'manual',
 		workflow_step_id TEXT NOT NULL DEFAULT '',
 		agent_id TEXT NOT NULL DEFAULT '',
 		model TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'pending',
+		verdict TEXT NOT NULL DEFAULT '',
 		error_code TEXT NOT NULL DEFAULT '',
 		error_message TEXT NOT NULL DEFAULT '',
 		summary TEXT NOT NULL DEFAULT '',
@@ -1123,6 +1125,22 @@ const taskReviewSchemaDDL = `
 		resolved_at TIMESTAMP,
 		created_at TIMESTAMP NOT NULL,
 		updated_at TIMESTAMP NOT NULL,
+		FOREIGN KEY (run_id) REFERENCES task_review_runs(id) ON DELETE CASCADE,
+		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS task_objective_criteria (
+		id TEXT PRIMARY KEY,
+		run_id TEXT NOT NULL,
+		task_id TEXT NOT NULL,
+		ordinal INTEGER NOT NULL DEFAULT 0,
+		source TEXT NOT NULL DEFAULT 'derived',
+		source_ref TEXT NOT NULL DEFAULT '',
+		text TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'unknown',
+		rationale TEXT NOT NULL DEFAULT '',
+		evidence TEXT NOT NULL DEFAULT '[]',
+		created_at TIMESTAMP NOT NULL,
 		FOREIGN KEY (run_id) REFERENCES task_review_runs(id) ON DELETE CASCADE,
 		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 	);

@@ -27,6 +27,10 @@ var ErrTaskReviewRunNotFound = errors.New("task review run not found")
 // ErrTaskReviewFindingNotFound is returned when no code-review finding record exists.
 var ErrTaskReviewFindingNotFound = errors.New("task review finding not found")
 
+// ErrTaskObjectiveCriterionNotFound is returned when no objective-assessment
+// criterion record exists.
+var ErrTaskObjectiveCriterionNotFound = errors.New("task objective criterion not found")
+
 // ErrExecutorNotFound is returned by the executor repository when no
 // executor row exists for the given ID. Callers should use errors.Is to
 // distinguish "row doesn't exist" (404 semantically) from transport-level
@@ -2207,6 +2211,123 @@ const (
 	ReviewTriggerAgent        ReviewRunTrigger = "agent"
 )
 
+// ReviewRunKind discriminates the two kinds of pass that share the
+// task_review_runs table: the native code review and the objective assessment.
+type ReviewRunKind string
+
+// Review run kinds. Empty is treated as code_review so pre-existing rows and
+// pre-existing Native Code Review inserts stay correct without a backfill.
+const (
+	ReviewKindCodeReview     ReviewRunKind = "code_review"
+	ReviewKindObjectiveCheck ReviewRunKind = "objective_check"
+)
+
+// Normalized returns code_review for the empty kind, otherwise k unchanged.
+func (k ReviewRunKind) Normalized() ReviewRunKind {
+	if k == "" {
+		return ReviewKindCodeReview
+	}
+	return k
+}
+
+// ObjectiveVerdict is the rollup answer of one objective assessment: did the
+// task's current changes satisfy its stated objective?
+type ObjectiveVerdict string
+
+// Objective verdicts. Empty is the non-verdict of a code-review run or an
+// objective-check run that did not complete.
+const (
+	ObjectiveVerdictMet     ObjectiveVerdict = "met"
+	ObjectiveVerdictPartial ObjectiveVerdict = "partial"
+	ObjectiveVerdictUnmet   ObjectiveVerdict = "unmet"
+)
+
+// ObjectiveCriterionStatus is the per-criterion judgement. unknown counts as
+// not-met for the verdict rollup.
+type ObjectiveCriterionStatus string
+
+// Objective criterion statuses.
+const (
+	ObjectiveCriterionMet     ObjectiveCriterionStatus = "met"
+	ObjectiveCriterionPartial ObjectiveCriterionStatus = "partial"
+	ObjectiveCriterionUnmet   ObjectiveCriterionStatus = "unmet"
+	ObjectiveCriterionUnknown ObjectiveCriterionStatus = "unknown"
+)
+
+// ValidObjectiveCriterionStatus reports whether s is a known criterion status.
+func ValidObjectiveCriterionStatus(s ObjectiveCriterionStatus) bool {
+	switch s {
+	case ObjectiveCriterionMet, ObjectiveCriterionPartial, ObjectiveCriterionUnmet, ObjectiveCriterionUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// ObjectiveCriterionSource records where a criterion came from: derived by the
+// assessing agent from the objective text, or copied verbatim from an
+// acceptance-criteria list in a task-attached document.
+type ObjectiveCriterionSource string
+
+// Objective criterion sources.
+const (
+	ObjectiveSourceDerived  ObjectiveCriterionSource = "derived"
+	ObjectiveSourceDocument ObjectiveCriterionSource = "document"
+)
+
+// RollupObjectiveVerdict computes the stored verdict from criterion statuses by
+// the fixed rule (the agent's own stated verdict is ignored): every criterion
+// met -> met; at least one met and at least one not-met -> partial; no criterion
+// met -> unmet. unknown and partial count as not-met. An empty set is unmet.
+func RollupObjectiveVerdict(statuses []ObjectiveCriterionStatus) ObjectiveVerdict {
+	if len(statuses) == 0 {
+		return ObjectiveVerdictUnmet
+	}
+	anyMet, anyNotMet := false, false
+	for _, s := range statuses {
+		if s == ObjectiveCriterionMet {
+			anyMet = true
+		} else {
+			anyNotMet = true
+		}
+	}
+	switch {
+	case anyMet && !anyNotMet:
+		return ObjectiveVerdictMet
+	case anyMet && anyNotMet:
+		return ObjectiveVerdictPartial
+	default:
+		return ObjectiveVerdictUnmet
+	}
+}
+
+// EvidencePointer locates supporting evidence for a criterion result in the
+// task's changed set. Repo is empty for a single-repository task. Line and
+// LineEnd are optional (0 = unspecified).
+type EvidencePointer struct {
+	Repo    string `json:"repo,omitempty"`
+	File    string `json:"file"`
+	Line    int    `json:"line,omitempty"`
+	LineEnd int    `json:"line_end,omitempty"`
+}
+
+// TaskObjectiveCriterion is one criterion result of an objective_check run: a
+// testable statement the change was judged against, its status, the agent's
+// rationale, and zero or more evidence pointers into the changed set.
+type TaskObjectiveCriterion struct {
+	ID        string                   `json:"id"`
+	RunID     string                   `json:"run_id"`
+	TaskID    string                   `json:"task_id"`
+	Ordinal   int                      `json:"ordinal"`
+	Source    ObjectiveCriterionSource `json:"source"`
+	SourceRef string                   `json:"source_ref"`
+	Text      string                   `json:"text"`
+	Status    ObjectiveCriterionStatus `json:"status"`
+	Rationale string                   `json:"rationale"`
+	Evidence  []EvidencePointer        `json:"evidence"`
+	CreatedAt time.Time                `json:"created_at"`
+}
+
 // ReviewSeverity ranks how much a finding should worry the reader.
 type ReviewSeverity string
 
@@ -2263,6 +2384,7 @@ type TaskReviewRun struct {
 	ID             string           `json:"id"`
 	TaskID         string           `json:"task_id"`
 	SessionID      string           `json:"session_id"`
+	Kind           ReviewRunKind    `json:"kind"`
 	Trigger        ReviewRunTrigger `json:"trigger"`
 	WorkflowStepID string           `json:"workflow_step_id"`
 	// EntryID is the step-transition ledger row identifier of the step entry
@@ -2270,21 +2392,22 @@ type TaskReviewRun struct {
 	// run_code_review step-entry action. Empty for manual/MCP-triggered runs.
 	// Durable dedup key for AC-OFFICE-STEP-ENTRY-001.10: a redelivery of the
 	// same entry must rejoin this run rather than start a second one.
-	EntryID         string          `json:"entry_id,omitempty"`
-	AgentID         string          `json:"agent_id"`
-	Model           string          `json:"model"`
-	Status          ReviewRunStatus `json:"status"`
-	ErrorCode       string          `json:"error_code"`
-	ErrorMessage    string          `json:"error_message"`
-	Summary         string          `json:"summary"`
-	FindingCount    int             `json:"finding_count"`
-	FileCount       int             `json:"file_count"`
-	RepositoryCount int             `json:"repository_count"`
-	PromptTokens    int             `json:"prompt_tokens"`
-	ResponseTokens  int             `json:"response_tokens"`
-	DurationMs      int             `json:"duration_ms"`
-	CreatedAt       time.Time       `json:"created_at"`
-	CompletedAt     *time.Time      `json:"completed_at,omitempty"`
+	EntryID         string           `json:"entry_id,omitempty"`
+	AgentID         string           `json:"agent_id"`
+	Model           string           `json:"model"`
+	Status          ReviewRunStatus  `json:"status"`
+	Verdict         ObjectiveVerdict `json:"verdict"`
+	ErrorCode       string           `json:"error_code"`
+	ErrorMessage    string           `json:"error_message"`
+	Summary         string           `json:"summary"`
+	FindingCount    int              `json:"finding_count"`
+	FileCount       int              `json:"file_count"`
+	RepositoryCount int              `json:"repository_count"`
+	PromptTokens    int              `json:"prompt_tokens"`
+	ResponseTokens  int              `json:"response_tokens"`
+	DurationMs      int              `json:"duration_ms"`
+	CreatedAt       time.Time        `json:"created_at"`
+	CompletedAt     *time.Time       `json:"completed_at,omitempty"`
 }
 
 // TaskReviewFinding is one anchored, advisory review comment produced by a

@@ -16,9 +16,14 @@ import (
 
 // reviewRunColumns is the canonical column list for task_review_runs. Kept as a
 // constant so every read path scans in the same order as writes.
-const reviewRunColumns = `id, task_id, session_id, trigger, workflow_step_id, agent_id, model,
-	status, error_code, error_message, summary, finding_count, file_count, repository_count,
+const reviewRunColumns = `id, task_id, session_id, kind, trigger, workflow_step_id, agent_id, model,
+	status, verdict, error_code, error_message, summary, finding_count, file_count, repository_count,
 	prompt_tokens, response_tokens, duration_ms, entry_id, created_at, completed_at`
+
+// objectiveCriterionColumns is the canonical column list for
+// task_objective_criteria.
+const objectiveCriterionColumns = `id, run_id, task_id, ordinal, source, source_ref,
+	text, status, rationale, evidence, created_at`
 
 const reviewFindingColumns = `id, run_id, task_id, repository_id, repository_name, file_path,
 	start_line, end_line, side, severity, category, title, body, suggestion, anchor_text,
@@ -48,11 +53,12 @@ func (r *Repository) CreateTaskReviewRun(ctx context.Context, run *models.TaskRe
 	if run.Trigger == "" {
 		run.Trigger = models.ReviewTriggerManual
 	}
+	run.Kind = run.Kind.Normalized()
 	_, err := r.db.ExecContext(ctx, r.db.Rebind(`
 		INSERT INTO task_review_runs (`+reviewRunColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`), run.ID, run.TaskID, run.SessionID, string(run.Trigger), run.WorkflowStepID, run.AgentID,
-		run.Model, string(run.Status), run.ErrorCode, run.ErrorMessage, run.Summary,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`), run.ID, run.TaskID, run.SessionID, string(run.Kind), string(run.Trigger), run.WorkflowStepID, run.AgentID,
+		run.Model, string(run.Status), string(run.Verdict), run.ErrorCode, run.ErrorMessage, run.Summary,
 		run.FindingCount, run.FileCount, run.RepositoryCount, run.PromptTokens,
 		run.ResponseTokens, run.DurationMs, run.EntryID, run.CreatedAt, run.CompletedAt)
 	if err != nil {
@@ -121,12 +127,12 @@ func (r *Repository) FindTaskReviewRunByEntryID(ctx context.Context, entryID str
 func (r *Repository) UpdateTaskReviewRun(ctx context.Context, run *models.TaskReviewRun) error {
 	result, err := r.db.ExecContext(ctx, r.db.Rebind(`
 		UPDATE task_review_runs SET
-			session_id = ?, agent_id = ?, model = ?, status = ?, error_code = ?,
+			session_id = ?, agent_id = ?, model = ?, status = ?, verdict = ?, error_code = ?,
 			error_message = ?, summary = ?, finding_count = ?, file_count = ?,
 			repository_count = ?, prompt_tokens = ?, response_tokens = ?,
 			duration_ms = ?, completed_at = ?
 		WHERE id = ?
-	`), run.SessionID, run.AgentID, run.Model, string(run.Status), run.ErrorCode,
+	`), run.SessionID, run.AgentID, run.Model, string(run.Status), string(run.Verdict), run.ErrorCode,
 		run.ErrorMessage, run.Summary, run.FindingCount, run.FileCount, run.RepositoryCount,
 		run.PromptTokens, run.ResponseTokens, run.DurationMs, run.CompletedAt, run.ID)
 	if err != nil {
@@ -157,7 +163,8 @@ func (r *Repository) ListTaskReviewRuns(ctx context.Context, taskID string, limi
 	}
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(
 		`SELECT `+reviewRunColumns+` FROM task_review_runs
-		 WHERE task_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`), taskID, limit)
+		 WHERE task_id = ? AND kind = 'code_review'
+		 ORDER BY created_at DESC, id DESC LIMIT ?`), taskID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list task review runs: %w", err)
 	}
@@ -173,7 +180,7 @@ const defaultReviewRunHistory = 20
 func (r *Repository) ListActiveTaskReviewRuns(ctx context.Context, taskID string) ([]*models.TaskReviewRun, error) {
 	rows, err := r.ro.QueryContext(ctx, r.ro.Rebind(
 		`SELECT `+reviewRunColumns+` FROM task_review_runs
-		 WHERE task_id = ? AND status IN ('pending', 'running')
+		 WHERE task_id = ? AND kind = 'code_review' AND status IN ('pending', 'running')
 		 ORDER BY created_at DESC, id DESC`), taskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list active task review runs: %w", err)
@@ -370,6 +377,7 @@ func (r *Repository) DeleteSupersededTaskReviewFindings(ctx context.Context, tas
 func (r *Repository) DeleteTaskReviewByTask(ctx context.Context, taskID string) error {
 	statements := []string{
 		`DELETE FROM task_review_findings WHERE task_id = ?`,
+		`DELETE FROM task_objective_criteria WHERE task_id = ?`,
 		`DELETE FROM task_review_runs WHERE task_id = ?`,
 	}
 	for _, stmt := range statements {
@@ -386,6 +394,7 @@ func (r *Repository) DeleteTaskReviewByTask(ctx context.Context, taskID string) 
 func (r *Repository) DeleteTaskReviewByWorkspace(ctx context.Context, workspaceID string) error {
 	statements := []string{
 		`DELETE FROM task_review_findings WHERE task_id IN (SELECT id FROM tasks WHERE workspace_id = ?)`,
+		`DELETE FROM task_objective_criteria WHERE task_id IN (SELECT id FROM tasks WHERE workspace_id = ?)`,
 		`DELETE FROM task_review_runs WHERE task_id IN (SELECT id FROM tasks WHERE workspace_id = ?)`,
 	}
 	for _, stmt := range statements {
@@ -403,10 +412,10 @@ type reviewRowScanner interface {
 
 func scanReviewRun(s reviewRowScanner) (*models.TaskReviewRun, error) {
 	run := &models.TaskReviewRun{}
-	var trigger, status string
+	var kind, trigger, status, verdict string
 	var completedAt sql.NullTime
-	err := s.Scan(&run.ID, &run.TaskID, &run.SessionID, &trigger, &run.WorkflowStepID,
-		&run.AgentID, &run.Model, &status, &run.ErrorCode, &run.ErrorMessage, &run.Summary,
+	err := s.Scan(&run.ID, &run.TaskID, &run.SessionID, &kind, &trigger, &run.WorkflowStepID,
+		&run.AgentID, &run.Model, &status, &verdict, &run.ErrorCode, &run.ErrorMessage, &run.Summary,
 		&run.FindingCount, &run.FileCount, &run.RepositoryCount, &run.PromptTokens,
 		&run.ResponseTokens, &run.DurationMs, &run.EntryID, &run.CreatedAt, &completedAt)
 	if err != nil {
@@ -415,8 +424,10 @@ func scanReviewRun(s reviewRowScanner) (*models.TaskReviewRun, error) {
 		}
 		return nil, fmt.Errorf("failed to scan task review run: %w", err)
 	}
+	run.Kind = models.ReviewRunKind(kind).Normalized()
 	run.Trigger = models.ReviewRunTrigger(trigger)
 	run.Status = models.ReviewRunStatus(status)
+	run.Verdict = models.ObjectiveVerdict(verdict)
 	if completedAt.Valid {
 		t := completedAt.Time.UTC()
 		run.CompletedAt = &t

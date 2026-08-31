@@ -1,7 +1,7 @@
 ---
 id: "01-schema-and-repository"
 title: "Shared run kind/verdict + task_objective_criteria table + repository"
-status: pending
+status: done
 wave: 1
 depends_on: []
 plan: "plan.md"
