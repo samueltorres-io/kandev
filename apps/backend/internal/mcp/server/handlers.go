@@ -1188,6 +1188,31 @@ func (s *Server) publishReviewFindingsHandler() server.ToolHandlerFunc {
 	}
 }
 
+func (s *Server) publishObjectiveAssessmentHandler() server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		taskID, err := s.resolveTaskID(req)
+		if err != nil {
+			return mcp.NewToolResultError("task_id is required"), nil
+		}
+		criteriaRaw, ok := req.GetArguments()["criteria"]
+		if !ok {
+			return mcp.NewToolResultError(
+				"criteria is required (array of {text, status, rationale, source_ref?, evidence?} objects)"), nil
+		}
+		payload := map[string]interface{}{
+			"task_id":  taskID,
+			"summary":  req.GetString("summary", ""),
+			"criteria": criteriaRaw,
+		}
+		var result map[string]interface{}
+		if err := s.backend.RequestPayload(ctx, ws.ActionMCPPublishObjectiveAssessment, payload, &result); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		return mcp.NewToolResultText(fmt.Sprintf("Objective assessment published:\n%s", string(data))), nil
+	}
+}
+
 func (s *Server) getWalkthroughHandler() server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		taskID, err := s.resolveTaskID(req)

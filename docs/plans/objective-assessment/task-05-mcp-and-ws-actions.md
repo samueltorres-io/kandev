@@ -1,7 +1,7 @@
 ---
 id: "05-mcp-and-ws-actions"
 title: "publish_objective_assessment_kandev MCP tool + task.objective.* WS actions"
-status: pending
+status: done
 wave: 4
 depends_on: ["04-runner-branch-and-utility-agent"]
 plan: "plan.md"

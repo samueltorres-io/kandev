@@ -45,10 +45,15 @@ func (h *Handlers) registerReviewHandlers(d mcpActionRegistrar) int {
 	d.RegisterFunc(ws.ActionTaskReviewFindingUpdate, h.handleUpdateReviewFinding)
 	d.RegisterFunc(ws.ActionTaskReviewClear, h.handleClearTaskReview)
 	d.RegisterFunc(ws.ActionTaskReviewCancel, h.handleCancelTaskReview)
-	registered := 5
+	d.RegisterFunc(ws.ActionMCPPublishObjectiveAssessment, h.handlePublishObjectiveAssessment)
+	d.RegisterFunc(ws.ActionTaskObjectiveGet, h.handleGetObjectiveAssessment)
+	d.RegisterFunc(ws.ActionTaskObjectiveClear, h.handleClearObjectiveAssessment)
+	d.RegisterFunc(ws.ActionTaskObjectiveCancel, h.handleCancelObjectiveAssessment)
+	registered := 9
 	if h.reviewRunner != nil {
 		d.RegisterFunc(ws.ActionTaskReviewRun, h.handleRunTaskReview)
-		registered++
+		d.RegisterFunc(ws.ActionTaskObjectiveRun, h.handleRunObjectiveAssessment)
+		registered += 2
 	}
 	return registered
 }

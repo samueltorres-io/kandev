@@ -1739,6 +1739,58 @@ func (s *Server) registerReviewTools() {
 		),
 		s.wrapHandler("publish_review_findings_kandev", s.publishReviewFindingsHandler()),
 	)
+	s.mcpServer.AddTool(
+		mcp.NewTool("publish_objective_assessment_kandev",
+			mcp.WithDescription("Publish an objective assessment: did the task's current changes accomplish what the task asked for? Submit one result per acceptance criterion with a status (met/partial/unmet/unknown), a rationale, and optional file/line evidence. Kandev computes the overall verdict from the statuses; there is no verdict argument. Advisory only. task_id defaults to the current task."),
+			mcp.WithString("task_id", mcp.Description("Task to attach the assessment to. Defaults to your current task.")),
+			mcp.WithString("summary", mcp.Description("Optional one-paragraph summary of what is done and what is missing.")),
+			mcp.WithArray("criteria", mcp.Required(),
+				mcp.Description("One result per criterion the change was judged against."),
+				mcp.Items(buildObjectiveCriterionSchemaItem()),
+			),
+		),
+		s.wrapHandler("publish_objective_assessment_kandev", s.publishObjectiveAssessmentHandler()),
+	)
+}
+
+// buildObjectiveCriterionSchemaItem describes one criterion object in the
+// publish_objective_assessment_kandev tool schema.
+func buildObjectiveCriterionSchemaItem() map[string]any {
+	const typeKey = "type"
+	str := func(desc string) map[string]any {
+		return map[string]any{typeKey: "string", descriptionArg: desc}
+	}
+	num := func(desc string) map[string]any {
+		return map[string]any{typeKey: "integer", descriptionArg: desc}
+	}
+	return map[string]any{
+		typeKey: "object",
+		"properties": map[string]any{
+			"text":       str("The criterion statement, evaluated verbatim when provided in the prompt."),
+			"source_ref": str("Optional AC-* id when the criterion came from a provided acceptance-criteria list."),
+			"status": map[string]any{
+				typeKey:        "string",
+				"enum":         []string{"met", "partial", "unmet", "unknown"},
+				descriptionArg: "met = fully satisfied with evidence; unknown = cannot tell from the changed set.",
+			},
+			"rationale": str("One paragraph explaining the status, citing what in the diff supports it."),
+			"evidence": map[string]any{
+				typeKey:        "array",
+				descriptionArg: "Optional file/line pointers into the changed set.",
+				"items": map[string]any{
+					typeKey: "object",
+					"properties": map[string]any{
+						"repo":     str("Optional repository name in a multi-repository task."),
+						"file":     str("Path to a changed file, relative to the repo root."),
+						"line":     num("Optional 1-based line in the new version of the file."),
+						"line_end": num("Optional 1-based end line for a range."),
+					},
+					"required": []string{"file"},
+				},
+			},
+		},
+		"required": []string{"text", "status", "rationale"},
+	}
 }
 
 // buildReviewFindingSchemaItem describes one finding object in the
